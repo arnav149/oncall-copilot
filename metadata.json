@@ -1,0 +1,5 @@
+{
+  "name": "On-Call Copilot",
+  "description": "A proactive AI SRE assistant that guides engineers through the first 10 minutes of a service incident using real-time telemetry interpretation and dynamic hypothesis testing.",
+  "requestFramePermissions": []
+}
