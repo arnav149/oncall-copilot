@@ -35,15 +35,27 @@ export interface Alert {
 }
 
 export interface Step {
+  id: string;
   action: string;
   reason: string;
   expectation: string;
+  stopCondition?: string;
+  citesLogs: string[];
+  citesRunbooks: string[];
+  ifPassNext: string;
+  ifFailNext: string;
 }
 
 export interface CopilotState {
   summary: string;
   hypothesis: string;
+  confidence: number;
+  evidenceLogs: string[];
+  evidenceRunbooks: string[];
   steps: Step[];
+  questionsToAsk: string[];
+  missingSignals: string[];
+  estimatedTimeSavedMinutes: number;
 }
 
 export interface Message {

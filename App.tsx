@@ -109,7 +109,7 @@ const App: React.FC = () => {
           ))}
         </div>
         <div className="p-4 bg-slate-900/30 border-t border-slate-800 text-[10px] text-slate-600 italic">
-          v0.2.0-beta • Runbook & Log Integration Active
+          v0.2.1 • SRE Grade Reasoning Active
         </div>
       </div>
 
@@ -164,20 +164,6 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Logs Snapshot (Added context for user) */}
-              <div className="bg-slate-900/20 border border-slate-800/50 rounded-xl p-4">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">
-                  <i className="fa-solid fa-terminal mr-2"></i>Critical Log Patterns (Recent)
-                </h3>
-                <div className="space-y-1">
-                  {selectedAlert.logs.map((log, idx) => (
-                    <div key={idx} className="mono text-[11px] text-slate-400 py-1 border-b border-slate-800/30 last:border-0 truncate">
-                      <span className="text-indigo-500 opacity-50">[{selectedAlert.service}]</span> {log}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {messages.map((msg) => (
                 <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[90%] ${msg.role === 'user' ? 'bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none' : 'w-full'}`}>
@@ -211,7 +197,7 @@ const App: React.FC = () => {
                   type="text"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Share findings (e.g., 'Logs show retry exhaustion', 'Scaling pods'...)"
+                  placeholder="Share findings (e.g., 'Step 1 confirmed', 'Seeing timeouts in logs'...)"
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl py-4 pl-5 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                   disabled={isAnalyzing}
                 />
@@ -223,9 +209,6 @@ const App: React.FC = () => {
                   <i className="fa-solid fa-arrow-up"></i>
                 </button>
               </form>
-              <div className="mt-2 text-center">
-                <p className="text-[10px] text-slate-600">Tip: Mention specific Runbook steps you've completed for faster resolution.</p>
-              </div>
             </div>
           </>
         )}
@@ -257,12 +240,26 @@ const InvestigationResponse: React.FC<{ state: CopilotState }> = ({ state }) => 
         <i className="fa-solid fa-brain text-white text-xs"></i>
       </div>
       <div className="flex-1 space-y-6">
+        {/* Header Stats */}
+        <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-slate-800 pb-2">
+           <div className="flex items-center gap-1.5">
+              <i className="fa-solid fa-bullseye text-indigo-400"></i>
+              <span>Confidence: {(state.confidence * 100).toFixed(0)}%</span>
+           </div>
+           <div className="flex items-center gap-1.5">
+              <i className="fa-solid fa-clock-rotate-left text-emerald-400"></i>
+              <span>Time Saved: {state.estimatedTimeSavedMinutes}m</span>
+           </div>
+        </div>
+
         <section>
           <div className="flex items-center gap-2 mb-2">
             <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center">
               <i className="fa-solid fa-triangle-exclamation mr-2"></i>Alert Summary
             </h4>
-            <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 rounded mono border border-slate-700">Ref: Logs</span>
+            {state.evidenceLogs?.map(id => (
+              <span key={id} className="text-[9px] bg-slate-800 text-slate-400 px-1 rounded mono border border-slate-700">{id}</span>
+            ))}
           </div>
           <p className="text-slate-300 text-sm leading-relaxed">{state.summary}</p>
         </section>
@@ -270,9 +267,11 @@ const InvestigationResponse: React.FC<{ state: CopilotState }> = ({ state }) => 
         <section className="bg-indigo-500/5 border border-indigo-500/20 p-4 rounded-xl">
           <div className="flex items-center gap-2 mb-2">
             <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center">
-              <i className="fa-solid fa-lightbulb mr-2"></i>Most Likely Hypothesis
+              <i className="fa-solid fa-lightbulb mr-2"></i>Hypothesis
             </h4>
-            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 rounded mono border border-indigo-500/30">Ref: Runbook</span>
+            {state.evidenceRunbooks?.map(id => (
+              <span key={id} className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1 rounded mono border border-indigo-500/30">{id}</span>
+            ))}
           </div>
           <p className="text-slate-200 text-sm font-medium leading-relaxed italic">
             "{state.hypothesis}"
@@ -281,27 +280,32 @@ const InvestigationResponse: React.FC<{ state: CopilotState }> = ({ state }) => 
 
         <section>
           <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center">
-            <i className="fa-solid fa-magnifying-glass-chart mr-2"></i>Investigation Steps (Guided by Runbooks)
+            <i className="fa-solid fa-magnifying-glass-chart mr-2"></i>Investigation Plan
           </h4>
           <div className="space-y-3">
             {state.steps.map((step, idx) => (
-              <div key={idx} className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 relative overflow-hidden group">
+              <div key={step.id} className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 relative overflow-hidden group">
                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500/30 group-hover:bg-indigo-500 transition-colors"></div>
                 <div className="flex gap-4">
-                  <div className="h-6 w-6 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center text-[10px] font-bold border border-slate-700">
+                  <div className="h-6 w-6 rounded-full bg-slate-800 text-slate-400 flex-shrink-0 flex items-center justify-center text-[10px] font-bold border border-slate-700">
                     {idx + 1}
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-100 mb-1">{step.action}</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                       <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Contextual Reasoning</span>
-                        <p className="text-[11px] text-slate-400">{step.reason}</p>
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Reasoning</span>
+                        <p className="text-[11px] text-slate-400 leading-tight">{step.reason}</p>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Verification Marker</span>
-                        <p className="text-[11px] text-emerald-400/80">{step.expectation}</p>
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Success Metric</span>
+                        <p className="text-[11px] text-emerald-400/80 leading-tight">{step.expectation}</p>
                       </div>
+                    </div>
+                    {/* Branching Logic Visual */}
+                    <div className="mt-3 pt-3 border-t border-slate-800/50 flex gap-4 text-[9px] mono font-bold uppercase">
+                       <span className="text-slate-500">IF PASS: <span className="text-emerald-500">{step.ifPassNext}</span></span>
+                       <span className="text-slate-500">IF FAIL: <span className="text-red-500">{step.ifFailNext}</span></span>
                     </div>
                   </div>
                 </div>
@@ -309,6 +313,35 @@ const InvestigationResponse: React.FC<{ state: CopilotState }> = ({ state }) => 
             ))}
           </div>
         </section>
+
+        {(state.questionsToAsk?.length > 0 || state.missingSignals?.length > 0) && (
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800 pt-6">
+            {state.questionsToAsk?.length > 0 && (
+              <div>
+                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Targeted Questions</h4>
+                <ul className="space-y-1">
+                  {state.questionsToAsk.map((q, i) => (
+                    <li key={i} className="text-[11px] text-indigo-300 flex items-start gap-2">
+                      <span className="text-indigo-500">•</span> {q}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {state.missingSignals?.length > 0 && (
+              <div>
+                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Unobserved Signals</h4>
+                <ul className="space-y-1">
+                  {state.missingSignals.map((s, i) => (
+                    <li key={i} className="text-[11px] text-slate-500 flex items-start gap-2 italic">
+                      <span className="text-slate-700">?</span> {s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   </div>
