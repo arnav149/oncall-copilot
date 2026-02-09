@@ -3,8 +3,6 @@ import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
 import { Alert, CopilotState, Message, Runbook, ToolCall } from "../types";
 import { MOCK_TOOL_DATA } from "../constants";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const TOOLS: FunctionDeclaration[] = [
   {
     name: 'get_alert_details',
@@ -56,7 +54,10 @@ const FINAL_STATE_SCHEMA = {
     summary: { type: Type.STRING },
     hypothesis: { type: Type.STRING },
     alternativeHypothesis: { type: Type.STRING },
-    confidence: { type: Type.NUMBER },
+    confidence: { 
+      type: Type.NUMBER, 
+      description: 'The confidence level of the hypothesis as a float between 0.0 and 1.0 (e.g. 0.85 for 85%).' 
+    },
     evidenceLogs: { type: Type.ARRAY, items: { type: Type.STRING } },
     evidenceRunbooks: { type: Type.ARRAY, items: { type: Type.STRING } },
     steps: {
@@ -80,6 +81,29 @@ const FINAL_STATE_SCHEMA = {
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
+/**
+ * Utility to wrap API calls with exponential backoff for rate limiting (429 errors).
+ */
+async function callWithRetry(fn: () => Promise<any>, retries = 5, initialDelayMs = 5000) {
+  let currentDelay = initialDelayMs;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const errorMsg = error?.message || "";
+      const isRateLimit = errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || error?.status === 429;
+      
+      if (isRateLimit && i < retries - 1) {
+        console.warn(`Quota limit reached. Retrying in ${currentDelay}ms... (Attempt ${i + 1}/${retries})`);
+        await delay(currentDelay);
+        currentDelay *= 1.5;
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 export async function runAutonomousInvestigation(
   alert: Alert,
   runbooks: Runbook[],
@@ -90,35 +114,36 @@ export async function runAutonomousInvestigation(
     {
       role: 'user',
       parts: [{
-        text: `Automated Investigation Triggered for Alert: ${alert.id} (${alert.title}). 
-        Analyze this incident autonomously. Use the available tools to gather evidence. 
-        Current telemetry: ${JSON.stringify(alert.telemetry)}.
+        text: `Incident Investigation for Alert: ${alert.id}.
+        Use tools to gather evidence. Current telemetry: ${JSON.stringify(alert.telemetry)}.
         
-        Instructions:
-        1. Start by gathering baseline evidence (metrics, logs, deploys).
-        2. Narrow down the hypothesis based on tool outputs.
-        3. Aim for >80% confidence.
-        4. Max 8 tool calls.
-        5. Once you have a firm conclusion, provide the final investigation state in JSON.`
+        GOAL: Reach >0.8 confidence or use max 8 tool calls.
+        
+        CRITICAL: Only output tool calls. Do not explain yourself until you are finished.`
       }]
     }
   ];
 
-  for (let i = 0; i < 8; i++) {
-    // Add a throttle delay to help with quota issues
-    if (i > 0) await delay(1500);
+  const systemInstruction = "You are an expert SRE On-Call Copilot. Use tools to investigate incidents. Confidence scores must be a float between 0 and 1.";
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Switch to flash for high-frequency tool calling to avoid Pro quota limits
-      contents: currentMessages,
-      config: {
-        tools: [{ functionDeclarations: TOOLS }],
-        temperature: 0.1,
-        thinkingConfig: { thinkingBudget: 2000 }
-      }
+  for (let i = 0; i < 8; i++) {
+    if (i > 0) await delay(4000);
+
+    const response = await callWithRetry(() => {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      return ai.models.generateContent({
+        model: 'gemini-flash-lite-latest',
+        contents: currentMessages,
+        config: {
+          tools: [{ functionDeclarations: TOOLS }],
+          temperature: 0.1,
+          systemInstruction,
+          thinkingConfig: { thinkingBudget: 0 }
+        }
+      });
     });
 
-    const call = response.candidates[0].content.parts.find(p => p.functionCall);
+    const call = response.candidates?.[0]?.content?.parts?.find(p => p.functionCall);
     if (call) {
       const { name, args } = call.functionCall!;
       const result = MOCK_TOOL_DATA[alert.id]?.[name] || { status: 'error', message: 'No data found for this tool in mock environment.' };
@@ -132,11 +157,10 @@ export async function runAutonomousInvestigation(
       };
       toolCalls = [...toolCalls, newCall];
       
-      // Notify UI of progress
       onUpdate({
         summary: 'Investigation in progress...',
-        hypothesis: 'Gathering more data...',
-        confidence: Math.min(0.9, 0.1 + (i * 0.15)),
+        hypothesis: `Running ${name}...`,
+        confidence: Math.min(0.8, 0.1 + (i * 0.1)),
         evidenceLogs: [],
         evidenceRunbooks: [],
         steps: [],
@@ -157,28 +181,33 @@ export async function runAutonomousInvestigation(
         }]
       });
     } else {
-      // No more tool calls, model wants to provide final answer
-      await delay(1000); // Final throttle before final extraction
-      const finalResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [
-          ...currentMessages,
-          { role: 'user', parts: [{ text: "Provide the final state now using the requested JSON schema. Be concise but thorough in the summary." }] }
-        ],
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: FINAL_STATE_SCHEMA,
-          thinkingConfig: { thinkingBudget: 2000 }
-        }
-      });
-      
-      const finalState = JSON.parse(finalResponse.text);
-      onUpdate({
-        ...finalState,
-        toolCalls,
-        isInvestigationComplete: true
-      });
-      return;
+      break;
     }
   }
+
+  // Final synthesis using gemini-3-pro-preview for deep reasoning
+  await delay(3000); 
+  const finalResponse = await callWithRetry(() => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    return ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: [
+        ...currentMessages,
+        { role: 'user', parts: [{ text: "Gathered all evidence. Provide the final state in the requested JSON format. Ensure confidence is a number between 0 and 1." }] }
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: FINAL_STATE_SCHEMA,
+        systemInstruction: "You are an expert SRE. Provide the final investigation result in JSON. Use decimal values (0-1) for confidence.",
+        thinkingConfig: { thinkingBudget: 32768 } // Max budget for gemini-3-pro-preview
+      }
+    });
+  });
+  
+  const finalState = JSON.parse(finalResponse.text);
+  onUpdate({
+    ...finalState,
+    toolCalls,
+    isInvestigationComplete: true
+  });
 }

@@ -172,95 +172,65 @@ const ToolResultPopover: React.FC<{ result: any }> = ({ result }) => {
   );
 };
 
-const InvestigationOutput: React.FC<{ state: CopilotState }> = ({ state }) => (
-  <div className="space-y-6">
-    <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-slate-800 pb-2">
-       <div className="flex items-center gap-1.5">
-          <i className="fa-solid fa-bullseye text-indigo-400"></i>
-          <span>Confidence: {(state.confidence * 100).toFixed(0)}%</span>
-       </div>
-       <div className="flex items-center gap-1.5 ml-auto">
-          <i className="fa-solid fa-clock-rotate-left text-emerald-400"></i>
-          <span>Time Saved: {state.estimatedTimeSavedMinutes}m</span>
-       </div>
-    </div>
+const InvestigationOutput: React.FC<{ state: CopilotState }> = ({ state }) => {
+  // Normalize confidence: if > 1, assume it's already a percentage (e.g., 95)
+  const confidenceVal = state.confidence > 1 ? state.confidence : state.confidence * 100;
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-slate-800 pb-2">
+         <div className="flex items-center gap-1.5">
+            <i className="fa-solid fa-bullseye text-indigo-400"></i>
+            <span>Confidence: {confidenceVal.toFixed(0)}%</span>
+         </div>
+         <div className="flex items-center gap-1.5 ml-auto">
+            <i className="fa-solid fa-clock-rotate-left text-emerald-400"></i>
+            <span>Time Saved: {state.estimatedTimeSavedMinutes}m</span>
+         </div>
+      </div>
 
-    <section>
-      <h4 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex items-center">
-        <i className="fa-solid fa-triangle-exclamation mr-2"></i>Alert Summary
-      </h4>
-      <p className="text-slate-300 text-sm">{state.summary}</p>
-    </section>
-
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <section className="bg-indigo-500/5 border border-indigo-500/20 p-4 rounded-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-2 opacity-10">
-          <i className="fa-solid fa-lightbulb fa-3x"></i>
-        </div>
-        <h4 className="text-xs font-bold text-indigo-400 uppercase mb-2">Primary Hypothesis</h4>
-        <p className="text-slate-100 text-sm font-semibold">{state.hypothesis}</p>
-        <div className="mt-3 flex flex-wrap gap-1">
-          {state.evidenceLogs?.map(e => <span key={e} className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1 rounded mono">{e}</span>)}
-        </div>
+      <section>
+        <h4 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex items-center">
+          <i className="fa-solid fa-triangle-exclamation mr-2"></i>Alert Summary
+        </h4>
+        <p className="text-slate-300 text-sm">{state.summary}</p>
       </section>
 
-      {state.alternativeHypothesis && (
-        <section className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl opacity-60">
-          <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Alternative</h4>
-          <p className="text-slate-400 text-sm italic">{state.alternativeHypothesis}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <section className="bg-indigo-500/5 border border-indigo-500/20 p-4 rounded-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-2 opacity-10">
+            <i className="fa-solid fa-lightbulb fa-3x"></i>
+          </div>
+          <h4 className="text-xs font-bold text-indigo-400 uppercase mb-2">Primary Hypothesis</h4>
+          <p className="text-slate-100 text-sm font-semibold">{state.hypothesis}</p>
+          <div className="mt-3 flex flex-wrap gap-1">
+            {state.evidenceLogs?.map(e => <span key={e} className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1 rounded mono">{e}</span>)}
+          </div>
+        </section>
+
+        {state.alternativeHypothesis && (
+          <section className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl opacity-60">
+            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Alternative</h4>
+            <p className="text-slate-400 text-sm italic">{state.alternativeHypothesis}</p>
+          </section>
+        )}
+      </div>
+
+      {state.commsDraft && (
+        <section className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center">
+              <i className="fa-brands fa-slack mr-2"></i>Incident Channel Update
+            </h4>
+            <button className="text-[9px] bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded">Copy</button>
+          </div>
+          <div className="bg-black/40 p-3 rounded mono text-[11px] text-slate-300 whitespace-pre-wrap border border-slate-800">
+            {state.commsDraft}
+          </div>
         </section>
       )}
     </div>
-
-    <section>
-      <h4 className="text-xs font-bold text-indigo-400 uppercase mb-3 flex items-center">
-        <i className="fa-solid fa-list-check mr-2"></i>Investigation Outcome & Next Steps
-      </h4>
-      <div className="space-y-3">
-        {state.steps.map((step, idx) => (
-          <div key={step.id} className={`bg-slate-900/60 border ${step.isCompleted ? 'border-emerald-900/50 bg-emerald-900/5' : 'border-slate-800'} rounded-lg p-4 relative overflow-hidden`}>
-            {step.isCompleted && <div className="absolute right-3 top-3"><i className="fa-solid fa-circle-check text-emerald-500"></i></div>}
-            <div className="flex gap-4">
-              <div className={`h-6 w-6 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold border ${step.isCompleted ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
-                {idx + 1}
-              </div>
-              <div className="flex-1">
-                <p className={`text-sm font-semibold mb-1 ${step.isCompleted ? 'text-slate-300 line-through opacity-50' : 'text-slate-100'}`}>
-                  {step.isCompleted ? 'CHECKED: ' : ''}{step.action}
-                </p>
-                {!step.isCompleted && (
-                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Why</span>
-                      <p className="text-[11px] text-slate-400 leading-tight">{step.reason}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Expectation</span>
-                      <p className="text-[11px] text-emerald-400/80 leading-tight">{step.expectation}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-
-    {state.commsDraft && (
-      <section className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center">
-            <i className="fa-brands fa-slack mr-2"></i>Incident Channel Update
-          </h4>
-          <button className="text-[9px] bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded">Copy</button>
-        </div>
-        <div className="bg-black/40 p-3 rounded mono text-[11px] text-slate-300 whitespace-pre-wrap border border-slate-800">
-          {state.commsDraft}
-        </div>
-      </section>
-    )}
-  </div>
-);
+  );
+};
 
 export default App;
