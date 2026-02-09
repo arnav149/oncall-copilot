@@ -46,11 +46,9 @@ export const MOCK_ALERTS: Alert[] = [
       memoryUsage: 58
     },
     logs: [
-      "14:02:01 INFO [API] Request processed in 45ms",
-      "14:02:05 ERROR [API] Upstream 'PaymentSvc' timed out after 2000ms",
-      "14:02:05 WARN [API] Retrying PaymentSvc call (attempt 1/3)",
-      "14:02:07 ERROR [API] 502 Bad Gateway: PaymentSvc unreachable",
-      "14:02:08 ERROR [API] Stacktrace: java.net.ConnectException: Connection refused"
+      "ERROR [API] Upstream 'PaymentSvc' timed out after 2000ms",
+      "WARN [API] Retrying PaymentSvc call (attempt 1/3)",
+      "ERROR [API] 502 Bad Gateway: PaymentSvc unreachable"
     ]
   },
   {
@@ -70,80 +68,31 @@ export const MOCK_ALERTS: Alert[] = [
       memoryUsage: 74
     },
     logs: [
-      "13:58:10 INFO [PaymentSvc] Executing transaction TX-992",
-      "13:58:12 WARN [PaymentSvc] Redis command GET 'session_992' took 420ms",
-      "13:58:15 ERROR [PaymentSvc] Cache access degraded; falling back to DB",
-      "13:58:20 INFO [PaymentSvc] Thread pool 'Worker-1' saturated; queue length > 1000",
-      "13:58:22 WARN [PaymentSvc] High latency detected on Redis cluster node 04"
-    ]
-  },
-  {
-    id: 'ALRT-003',
-    title: 'DB CPU > 85%',
-    service: 'DB',
-    severity: AlertSeverity.WARNING,
-    region: 'us-east-1',
-    timestamp: new Date(Date.now() - 15 * 60000).toISOString(),
-    telemetry: {
-      cpuUsage: 89,
-      dbConnections: 120,
-      redisLatency: 8,
-      threadPoolUsage: 10,
-      recentDeploy: 'N/A',
-      errorRate: 0.2,
-      memoryUsage: 92
-    },
-    logs: [
-      "13:45:00 INFO [DB] Vacuuming system catalogs",
-      "13:46:12 WARN [DB] Slow query detected (12.4s): SELECT * FROM large_audit_trail...",
-      "13:47:05 ERROR [DB] Out of memory condition imminent in shared_buffers",
-      "13:48:00 INFO [DB] Checkpoint starting: forced by time"
-    ]
-  },
-  {
-    id: 'ALRT-004',
-    title: 'Cache miss rate spiking',
-    service: 'Cache',
-    severity: AlertSeverity.WARNING,
-    region: 'eu-central-1',
-    timestamp: new Date(Date.now() - 8 * 60000).toISOString(),
-    telemetry: {
-      cpuUsage: 12,
-      dbConnections: 5,
-      redisLatency: 22,
-      threadPoolUsage: 5,
-      recentDeploy: 'N/A',
-      errorRate: 0.1,
-      memoryUsage: 98
-    },
-    logs: [
-      "13:52:00 INFO [Cache] Maxmemory limit hit (2GB)",
-      "13:52:05 WARN [Cache] Evicting keys using allkeys-lru policy",
-      "13:53:10 INFO [Cache] Miss rate increased to 42% (Normal: 4%)",
-      "13:54:01 WARN [Cache] Hot key 'global_config_v2' detected"
-    ]
-  },
-  {
-    id: 'ALRT-005',
-    title: 'Auth timeouts increasing',
-    service: 'Auth',
-    severity: AlertSeverity.CRITICAL,
-    region: 'us-east-1',
-    timestamp: new Date(Date.now() - 3 * 60000).toISOString(),
-    telemetry: {
-      cpuUsage: 18,
-      dbConnections: 15,
-      redisLatency: 5,
-      threadPoolUsage: 85,
-      recentDeploy: 'Auth v3.0.1 (2 days ago)',
-      errorRate: 3.4,
-      memoryUsage: 42
-    },
-    logs: [
-      "14:00:05 ERROR [Auth] LDAP sync failed: Connection timeout",
-      "14:01:12 INFO [Auth] Authenticating user 'admin' via backup DB",
-      "14:01:45 WARN [Auth] Internal session pool nearly full",
-      "14:02:10 ERROR [Auth] JWT validation failure for kid 'rsa-1'"
+      "WARN [PaymentSvc] Redis command GET 'session_992' took 420ms",
+      "ERROR [PaymentSvc] Cache access degraded; falling back to DB"
     ]
   }
 ];
+
+// Map of Alert IDs to specific tool results to simulate a real environment
+export const MOCK_TOOL_DATA: Record<string, Record<string, any>> = {
+  'ALRT-001': {
+    'get_alert_details': { status: 'success', data: { id: 'ALRT-001', status: 'firing', created_at: '4m ago', labels: { severity: 'critical', region: 'us-east-1' } } },
+    'query_metrics': { status: 'success', data: { 'api_5xx_rate': [0.1, 0.4, 6.2, 5.8], 'paymentsvc_latency': [120, 150, 2100, 2050] } },
+    'get_recent_deploys': { status: 'success', data: [{ service: 'API', version: 'v2.4.1', deployed_at: '12m ago', result: 'Success' }] },
+    'get_dependency_health': { status: 'success', data: { 'PaymentSvc': 'Degraded', 'AuthSvc': 'Healthy', 'DB': 'Healthy' } },
+    'query_logs': { status: 'success', data: ["LOG_1: java.net.ConnectException: Connection refused to PaymentSvc:8080", "LOG_2: Request ID: req-442 Failed after 3 retries"] },
+    'run_runbook': { status: 'success', data: { name: 'API 5xx Spikes', suggested_action: 'Check PaymentSvc health immediately' } },
+    'get_feature_flags': { status: 'success', data: [] }
+  },
+  'ALRT-002': {
+    'get_alert_details': { status: 'success', data: { id: 'ALRT-002', status: 'firing', created_at: '2m ago', labels: { severity: 'critical', region: 'us-west-2' } } },
+    'query_metrics': { status: 'success', data: { 'redis_latency': [5, 8, 450, 480], 'redis_cpu': [12, 15, 88, 92] } },
+    'get_recent_deploys': { status: 'success', data: [{ service: 'PaymentSvc', version: 'v1.2.4', deployed_at: '15m ago', result: 'Success' }] },
+    'get_feature_flags': { status: 'success', data: [{ flag: 'enable_v3_caching', value: 'enabled', changed_at: '20m ago' }] },
+    'query_traces': { status: 'success', data: [{ span: 'Redis::GET', duration: '420ms', status: 'Slow' }] },
+    'get_dependency_health': { status: 'success', data: { 'Redis': 'Critical', 'DB': 'Healthy' } },
+    'query_logs': { status: 'success', data: ["LOG_1: Redis server 10.0.0.4:6379 high memory usage", "LOG_2: Timeout waiting for Redis response"] },
+    'run_runbook': { status: 'success', data: { name: 'Redis Latency / Cache Saturation', suggested_action: 'Scale Redis cluster or flush non-critical keys' } }
+  }
+};

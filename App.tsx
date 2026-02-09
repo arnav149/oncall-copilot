@@ -1,73 +1,39 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { MOCK_ALERTS, MOCK_RUNBOOKS } from './constants';
-import { Alert, AlertSeverity, Message, CopilotState } from './types';
-import { analyzeAlert, updateInvestigation } from './services/geminiService';
+import { Alert, AlertSeverity, Message, CopilotState, ToolCall } from './types';
+import { runAutonomousInvestigation } from './services/geminiService';
 
 const App: React.FC = () => {
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [copilotState, setCopilotState] = useState<CopilotState | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [inputValue, setInputValue] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const handleSelectAlert = async (alert: Alert) => {
-    if (selectedAlert?.id === alert.id) return;
-    
+  const startInvestigation = async (alert: Alert) => {
     setSelectedAlert(alert);
-    setMessages([]);
+    setCopilotState(null);
     setIsAnalyzing(true);
 
     try {
-      const result = await analyzeAlert(alert, MOCK_RUNBOOKS);
-      const initialMessage: Message = {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: `Analysis complete. I've correlated the alert with Runbooks and Logs.`,
-        state: result
-      };
-      setMessages([initialMessage]);
+      await runAutonomousInvestigation(alert, MOCK_RUNBOOKS, (state) => {
+        setCopilotState(state);
+      });
     } catch (error) {
-      console.error("Analysis failed", error);
+      console.error("Investigation failed", error);
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || !selectedAlert || isAnalyzing) return;
-
-    const userFinding = inputValue.trim();
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: userFinding
-    };
-
-    setMessages(prev => [...prev, userMsg]);
-    setInputValue('');
-    setIsAnalyzing(true);
-
-    try {
-      const result = await updateInvestigation(selectedAlert, messages, userFinding, MOCK_RUNBOOKS);
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Refining hypothesis based on your finding: "${userFinding}"`,
-        state: result
-      };
-      setMessages(prev => [...prev, assistantMsg]);
-    } catch (error) {
-      console.error("Update failed", error);
-    } finally {
-      setIsAnalyzing(false);
-    }
+  const handleSelectAlert = (alert: Alert) => {
+    if (selectedAlert?.id === alert.id) return;
+    startInvestigation(alert);
   };
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isAnalyzing]);
+  }, [copilotState, isAnalyzing]);
 
   return (
     <div className="flex h-screen bg-[#0a0a0c] text-slate-200 overflow-hidden">
@@ -109,7 +75,7 @@ const App: React.FC = () => {
           ))}
         </div>
         <div className="p-4 bg-slate-900/30 border-t border-slate-800 text-[10px] text-slate-600 italic">
-          v0.2.1 • SRE Grade Reasoning Active
+          v0.3.0 • Autonomous Agent Active
         </div>
       </div>
 
@@ -118,97 +84,65 @@ const App: React.FC = () => {
         {!selectedAlert ? (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
             <i className="fa-solid fa-radar fa-3x mb-4 text-slate-700 animate-pulse"></i>
-            <p className="text-lg">Select an active alert to start investigation</p>
-            <p className="text-sm mt-2 opacity-50">Monitoring cluster telemetry & logs...</p>
+            <p className="text-lg">Select an alert to trigger investigation</p>
           </div>
         ) : (
           <>
-            {/* Investigation Header */}
+            {/* Header */}
             <div className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0f0f12]/80 backdrop-blur-md sticky top-0 z-10">
               <div className="flex items-center gap-4">
-                <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse"></div>
+                <div className={`h-2 w-2 rounded-full ${isAnalyzing ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`}></div>
                 <div>
                   <h2 className="font-bold text-sm">{selectedAlert.title}</h2>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-tighter">Investigation ID: {selectedAlert.id}</p>
+                  <p className="text-[10px] text-slate-500 uppercase">Agent Session: {selectedAlert.id}</p>
                 </div>
               </div>
               <div className="flex gap-2">
-                <button className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold transition-colors">
-                  <i className="fa-solid fa-share-nodes mr-2"></i>Share Session
+                <button 
+                  onClick={() => startInvestigation(selectedAlert)}
+                  className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold transition-colors disabled:opacity-50"
+                  disabled={isAnalyzing}
+                >
+                  <i className="fa-solid fa-rotate-right mr-2"></i>Re-run
                 </button>
-                <button className="px-3 py-1.5 rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/30 text-xs font-semibold transition-colors">
+                <button className="px-3 py-1.5 rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold">
                   <i className="fa-solid fa-check mr-2"></i>Resolve
                 </button>
               </div>
             </div>
 
-            {/* Chat/Diagnostic History */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
-              {/* Telemetry Snapshot */}
-              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5">
-                <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                    <i className="fa-solid fa-chart-line mr-2"></i>Live Telemetry Snapshot
-                  </h3>
-                  <span className="text-[10px] mono text-slate-500">t=0 at {new Date(selectedAlert.timestamp).toLocaleTimeString()}</span>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Investigation Log (Tool Usage) */}
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl overflow-hidden">
+                <div className="p-3 bg-slate-800/50 flex items-center justify-between border-b border-slate-700">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Autonomous Investigation Run</span>
+                  <span className="text-[10px] mono text-indigo-400">
+                    {isAnalyzing ? `Step ${copilotState?.toolCalls.length || 0}/8 Running...` : `Complete (${copilotState?.toolCalls.length || 0} checks)`}
+                  </span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <TelemetryItem label="CPU Usage" value={`${selectedAlert.telemetry.cpuUsage}%`} trend="up" />
-                  <TelemetryItem label="DB Conns" value={selectedAlert.telemetry.dbConnections.toString()} trend="stable" />
-                  <TelemetryItem label="Redis Latency" value={`${selectedAlert.telemetry.redisLatency}ms`} trend={selectedAlert.telemetry.redisLatency > 100 ? 'up' : 'stable'} />
-                  <TelemetryItem label="Deploy" value={selectedAlert.telemetry.recentDeploy} trend="none" color="text-indigo-400" />
-                  <TelemetryItem label="Thread Pool" value={`${selectedAlert.telemetry.threadPoolUsage}%`} trend="up" />
-                  <TelemetryItem label="Error Rate" value={`${selectedAlert.telemetry.errorRate}%`} trend="up" color="text-red-400" />
-                  <TelemetryItem label="Memory" value={`${selectedAlert.telemetry.memoryUsage}%`} trend="stable" />
-                  <TelemetryItem label="Region" value={selectedAlert.region} trend="none" />
+                <div className="p-3 space-y-1 max-h-48 overflow-y-auto bg-black/20">
+                  {copilotState?.toolCalls.map((call, idx) => (
+                    <div key={call.id} className="flex items-center justify-between text-[11px] py-1 border-b border-white/5 last:border-0 group">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-slate-500 mono w-12">{call.id}</span>
+                        <span className="text-indigo-300 font-semibold truncate">{call.tool}({JSON.stringify(call.args)})</span>
+                      </div>
+                      <ToolResultPopover result={call.result} />
+                    </div>
+                  ))}
+                  {isAnalyzing && (
+                    <div className="flex items-center gap-3 text-[11px] py-1 animate-pulse">
+                      <span className="text-slate-500 mono w-12">NEXT</span>
+                      <span className="text-slate-600 italic">Thinking...</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[90%] ${msg.role === 'user' ? 'bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none' : 'w-full'}`}>
-                    {msg.role === 'user' ? (
-                      <p className="text-sm font-medium">{msg.content}</p>
-                    ) : (
-                      <InvestigationResponse state={msg.state!} />
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {isAnalyzing && (
-                <div className="flex items-start gap-4 animate-pulse">
-                  <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center">
-                    <i className="fa-solid fa-brain text-indigo-400"></i>
-                  </div>
-                  <div className="space-y-2 flex-1">
-                    <div className="h-4 bg-slate-800 rounded w-1/4"></div>
-                    <div className="h-20 bg-slate-800 rounded w-full"></div>
-                  </div>
-                </div>
-              )}
+              {copilotState && <InvestigationOutput state={copilotState} />}
+              
               <div ref={chatEndRef} />
-            </div>
-
-            {/* Input Footer */}
-            <div className="p-4 bg-[#0f0f12] border-t border-slate-800">
-              <form onSubmit={handleSendMessage} className="relative max-w-4xl mx-auto">
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Share findings (e.g., 'Step 1 confirmed', 'Seeing timeouts in logs'...)"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-4 pl-5 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
-                  disabled={isAnalyzing}
-                />
-                <button
-                  type="submit"
-                  disabled={!inputValue.trim() || isAnalyzing}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 bg-indigo-500 text-white rounded-lg flex items-center justify-center hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-500/20"
-                >
-                  <i className="fa-solid fa-arrow-up"></i>
-                </button>
-              </form>
             </div>
           </>
         )}
@@ -217,133 +151,115 @@ const App: React.FC = () => {
   );
 };
 
-const TelemetryItem: React.FC<{ label: string; value: string; trend: 'up' | 'down' | 'stable' | 'none'; color?: string }> = ({ label, value, trend, color }) => (
-  <div className="bg-black/20 p-3 rounded-lg border border-slate-800/50">
-    <p className="text-[9px] uppercase font-bold text-slate-500 mb-1">{label}</p>
-    <div className="flex items-center justify-between">
-      <span className={`text-xs font-bold mono ${color || 'text-slate-200'} truncate`}>{value}</span>
-      {trend !== 'none' && (
-        <i className={`fa-solid text-[10px] ${
-          trend === 'up' ? 'fa-arrow-trend-up text-red-500' : 
-          trend === 'down' ? 'fa-arrow-trend-down text-emerald-500' : 
-          'fa-minus text-slate-600'
-        }`}></i>
+const ToolResultPopover: React.FC<{ result: any }> = ({ result }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="text-[9px] bg-slate-800 hover:bg-slate-700 px-1.5 rounded text-slate-400 transition-colors"
+      >
+        Result <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} ml-1`}></i>
+      </button>
+      {isOpen && (
+        <div className="absolute right-0 top-6 z-20 w-80 bg-slate-800 border border-slate-700 rounded-lg p-3 shadow-2xl">
+          <pre className="text-[10px] mono text-indigo-200 overflow-x-auto">
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </div>
       )}
     </div>
-  </div>
-);
+  );
+};
 
-const InvestigationResponse: React.FC<{ state: CopilotState }> = ({ state }) => (
+const InvestigationOutput: React.FC<{ state: CopilotState }> = ({ state }) => (
   <div className="space-y-6">
-    <div className="flex gap-4">
-      <div className="h-8 w-8 rounded-full bg-indigo-500 flex-shrink-0 flex items-center justify-center">
-        <i className="fa-solid fa-brain text-white text-xs"></i>
-      </div>
-      <div className="flex-1 space-y-6">
-        {/* Header Stats */}
-        <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-slate-800 pb-2">
-           <div className="flex items-center gap-1.5">
-              <i className="fa-solid fa-bullseye text-indigo-400"></i>
-              <span>Confidence: {(state.confidence * 100).toFixed(0)}%</span>
-           </div>
-           <div className="flex items-center gap-1.5">
-              <i className="fa-solid fa-clock-rotate-left text-emerald-400"></i>
-              <span>Time Saved: {state.estimatedTimeSavedMinutes}m</span>
-           </div>
-        </div>
-
-        <section>
-          <div className="flex items-center gap-2 mb-2">
-            <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center">
-              <i className="fa-solid fa-triangle-exclamation mr-2"></i>Alert Summary
-            </h4>
-            {state.evidenceLogs?.map(id => (
-              <span key={id} className="text-[9px] bg-slate-800 text-slate-400 px-1 rounded mono border border-slate-700">{id}</span>
-            ))}
-          </div>
-          <p className="text-slate-300 text-sm leading-relaxed">{state.summary}</p>
-        </section>
-
-        <section className="bg-indigo-500/5 border border-indigo-500/20 p-4 rounded-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center">
-              <i className="fa-solid fa-lightbulb mr-2"></i>Hypothesis
-            </h4>
-            {state.evidenceRunbooks?.map(id => (
-              <span key={id} className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1 rounded mono border border-indigo-500/30">{id}</span>
-            ))}
-          </div>
-          <p className="text-slate-200 text-sm font-medium leading-relaxed italic">
-            "{state.hypothesis}"
-          </p>
-        </section>
-
-        <section>
-          <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center">
-            <i className="fa-solid fa-magnifying-glass-chart mr-2"></i>Investigation Plan
-          </h4>
-          <div className="space-y-3">
-            {state.steps.map((step, idx) => (
-              <div key={step.id} className="bg-slate-900/60 border border-slate-800 rounded-lg p-4 relative overflow-hidden group">
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500/30 group-hover:bg-indigo-500 transition-colors"></div>
-                <div className="flex gap-4">
-                  <div className="h-6 w-6 rounded-full bg-slate-800 text-slate-400 flex-shrink-0 flex items-center justify-center text-[10px] font-bold border border-slate-700">
-                    {idx + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-100 mb-1">{step.action}</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Reasoning</span>
-                        <p className="text-[11px] text-slate-400 leading-tight">{step.reason}</p>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Success Metric</span>
-                        <p className="text-[11px] text-emerald-400/80 leading-tight">{step.expectation}</p>
-                      </div>
-                    </div>
-                    {/* Branching Logic Visual */}
-                    <div className="mt-3 pt-3 border-t border-slate-800/50 flex gap-4 text-[9px] mono font-bold uppercase">
-                       <span className="text-slate-500">IF PASS: <span className="text-emerald-500">{step.ifPassNext}</span></span>
-                       <span className="text-slate-500">IF FAIL: <span className="text-red-500">{step.ifFailNext}</span></span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {(state.questionsToAsk?.length > 0 || state.missingSignals?.length > 0) && (
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800 pt-6">
-            {state.questionsToAsk?.length > 0 && (
-              <div>
-                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Targeted Questions</h4>
-                <ul className="space-y-1">
-                  {state.questionsToAsk.map((q, i) => (
-                    <li key={i} className="text-[11px] text-indigo-300 flex items-start gap-2">
-                      <span className="text-indigo-500">•</span> {q}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {state.missingSignals?.length > 0 && (
-              <div>
-                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Unobserved Signals</h4>
-                <ul className="space-y-1">
-                  {state.missingSignals.map((s, i) => (
-                    <li key={i} className="text-[11px] text-slate-500 flex items-start gap-2 italic">
-                      <span className="text-slate-700">?</span> {s}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        )}
-      </div>
+    <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-b border-slate-800 pb-2">
+       <div className="flex items-center gap-1.5">
+          <i className="fa-solid fa-bullseye text-indigo-400"></i>
+          <span>Confidence: {(state.confidence * 100).toFixed(0)}%</span>
+       </div>
+       <div className="flex items-center gap-1.5 ml-auto">
+          <i className="fa-solid fa-clock-rotate-left text-emerald-400"></i>
+          <span>Time Saved: {state.estimatedTimeSavedMinutes}m</span>
+       </div>
     </div>
+
+    <section>
+      <h4 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex items-center">
+        <i className="fa-solid fa-triangle-exclamation mr-2"></i>Alert Summary
+      </h4>
+      <p className="text-slate-300 text-sm">{state.summary}</p>
+    </section>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <section className="bg-indigo-500/5 border border-indigo-500/20 p-4 rounded-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-2 opacity-10">
+          <i className="fa-solid fa-lightbulb fa-3x"></i>
+        </div>
+        <h4 className="text-xs font-bold text-indigo-400 uppercase mb-2">Primary Hypothesis</h4>
+        <p className="text-slate-100 text-sm font-semibold">{state.hypothesis}</p>
+        <div className="mt-3 flex flex-wrap gap-1">
+          {state.evidenceLogs?.map(e => <span key={e} className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1 rounded mono">{e}</span>)}
+        </div>
+      </section>
+
+      {state.alternativeHypothesis && (
+        <section className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl opacity-60">
+          <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Alternative</h4>
+          <p className="text-slate-400 text-sm italic">{state.alternativeHypothesis}</p>
+        </section>
+      )}
+    </div>
+
+    <section>
+      <h4 className="text-xs font-bold text-indigo-400 uppercase mb-3 flex items-center">
+        <i className="fa-solid fa-list-check mr-2"></i>Investigation Outcome & Next Steps
+      </h4>
+      <div className="space-y-3">
+        {state.steps.map((step, idx) => (
+          <div key={step.id} className={`bg-slate-900/60 border ${step.isCompleted ? 'border-emerald-900/50 bg-emerald-900/5' : 'border-slate-800'} rounded-lg p-4 relative overflow-hidden`}>
+            {step.isCompleted && <div className="absolute right-3 top-3"><i className="fa-solid fa-circle-check text-emerald-500"></i></div>}
+            <div className="flex gap-4">
+              <div className={`h-6 w-6 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold border ${step.isCompleted ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                {idx + 1}
+              </div>
+              <div className="flex-1">
+                <p className={`text-sm font-semibold mb-1 ${step.isCompleted ? 'text-slate-300 line-through opacity-50' : 'text-slate-100'}`}>
+                  {step.isCompleted ? 'CHECKED: ' : ''}{step.action}
+                </p>
+                {!step.isCompleted && (
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Why</span>
+                      <p className="text-[11px] text-slate-400 leading-tight">{step.reason}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Expectation</span>
+                      <p className="text-[11px] text-emerald-400/80 leading-tight">{step.expectation}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    {state.commsDraft && (
+      <section className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center">
+            <i className="fa-brands fa-slack mr-2"></i>Incident Channel Update
+          </h4>
+          <button className="text-[9px] bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded">Copy</button>
+        </div>
+        <div className="bg-black/40 p-3 rounded mono text-[11px] text-slate-300 whitespace-pre-wrap border border-slate-800">
+          {state.commsDraft}
+        </div>
+      </section>
+    )}
   </div>
 );
 

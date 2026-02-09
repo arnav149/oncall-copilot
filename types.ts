@@ -23,6 +23,14 @@ export interface Telemetry {
   memoryUsage: number;
 }
 
+export interface ToolCall {
+  id: string;
+  tool: string;
+  args: any;
+  result: any;
+  timestamp: string;
+}
+
 export interface Alert {
   id: string;
   title: string;
@@ -39,23 +47,23 @@ export interface Step {
   action: string;
   reason: string;
   expectation: string;
-  stopCondition?: string;
   citesLogs: string[];
   citesRunbooks: string[];
-  ifPassNext: string;
-  ifFailNext: string;
+  isCompleted?: boolean;
 }
 
 export interface CopilotState {
   summary: string;
   hypothesis: string;
+  alternativeHypothesis?: string;
   confidence: number;
   evidenceLogs: string[];
   evidenceRunbooks: string[];
   steps: Step[];
-  questionsToAsk: string[];
-  missingSignals: string[];
+  toolCalls: ToolCall[];
+  commsDraft: string;
   estimatedTimeSavedMinutes: number;
+  isInvestigationComplete: boolean;
 }
 
 export interface Message {
