@@ -42,7 +42,7 @@ const App: React.FC = () => {
         <div className="p-6 border-b border-slate-800">
           <h1 className="text-xl font-bold flex items-center gap-2">
             <i className="fa-solid fa-microchip text-indigo-500"></i>
-            On-Call Copilot
+            Agentic On-Call Copilot
           </h1>
           <p className="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">Active Alerts</p>
         </div>
